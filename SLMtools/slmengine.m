@@ -219,7 +219,7 @@ if strcmp(prescriptionhat.InteriorKnots,'free')
   % set up the optimization parameters (fmincon)
   fminconoptions = optimset('fmincon');
   fminconoptions.LargeScale = 'off';
-  fminconoptions.Algorithm = 'active-set';
+  fminconoptions.Algorithm = prescription.FminconAlgorithm;
   if prescription.Verbosity>1
     fminconoptions.Display = 'iter';
   else
@@ -689,6 +689,9 @@ if (isnumeric(RP) && (RP>=0)) || ((ischar(RP)) && (strcmpi(RP,'smoothest')))
   % solve the problem using the given regularization parameter
   coef = solve_slm_system(RP,Mdes,rhs,Mreg,rhsreg, ...
     Meq,rhseq,Mineq,rhsineq,prescription);
+  
+  finalRP = RP;
+  
 elseif isnumeric(RP) && (RP<0)
   % we must match abs(RP) as the rmse.
   aim_rmse = abs(RP);
@@ -699,7 +702,7 @@ elseif isnumeric(RP) && (RP<0)
   
   % we logged the parameter in the optimization. undo that for
   % the final call
-  RP = 10^RP;
+  finalRP = 10^RP;
   
   % do one final call to get the final coefficients
   coef = solve_slm_system(RP,Mdes,rhs,Mreg,rhsreg, ...
@@ -716,7 +719,7 @@ elseif ischar(RP)
   
   % we logged the parameter in the optimization. undo that for
   % the final call
-  RP = 10^RP;
+  finalRP = 10^RP;
   
   % do one final call to get the final coefficients
   coef = solve_slm_system(RP,Mdes,rhs,Mreg,rhsreg, ...
@@ -734,7 +737,11 @@ slm.coef = coef;
 slmstats.TotalDoF = nk - 1;
 slmstats.NetDoF = slmstats.TotalDoF - size(Meq,1);
 % this function does all of the stats, stuffing into slmstats
-slm.stats = modelstatistics(slmstats,Mdes,y,coef,prescription.YScale);
+slm.stats = modelstatistics(slmstats,y,coef,prescription.YScale,Mdes);
+
+slm.stats.finalRP = finalRP;
+
+
 
 % ========================================================
 % =============== piecewise linear model =================
@@ -1307,6 +1314,9 @@ if (isnumeric(RP) && (RP>=0)) || ((ischar(RP)) && (strcmpi(RP,'smoothest')))
   % solve the problem using the given regularization parameter
   coef = solve_slm_system(RP,Mdes,rhs,Mreg,rhsreg, ...
     Meq,rhseq,Mineq,rhsineq,prescription);
+  
+  finalRP = RP;
+  
 elseif isnumeric(RP) && (RP<0)
   % we must match abs(RP) as the rmse.
   aim_rmse = abs(RP);
@@ -1317,7 +1327,7 @@ elseif isnumeric(RP) && (RP<0)
   
   % we logged the parameter in the optimization. undo that for
   % the final call
-  RP = 10^RP;
+  finalRP = 10^RP;
   
   % do one final call to get the final coefficients
   coef = solve_slm_system(RP,Mdes,rhs,Mreg,rhsreg, ...
@@ -1334,7 +1344,7 @@ elseif ischar(RP)
   
   % we logged the parameter in the optimization. undo that for
   % the final call
-  RP = 10^RP;
+  finalRP = 10^RP;
   
   % do one final call to get the final coefficients
   coef = solve_slm_system(RP,Mdes,rhs,Mreg,rhsreg, ...
@@ -1348,11 +1358,15 @@ slm.degree = 1;
 slm.knots = knots;
 slm.coef = coef;
 
-% degrees of freedom available
+% generate model statistics
 slmstats.TotalDoF = nk;
 slmstats.NetDoF = slmstats.TotalDoF - size(Meq,1);
 % this function does all of the stats, stuffing into slmstats
-slm.stats = modelstatistics(slmstats,Mdes,y,coef,prescription.YScale);
+slm.stats = modelstatistics(slmstats,y,coef,prescription.YScale,Mdes);
+
+slm.stats.finalRP = finalRP;
+
+
 
 % ========================================================
 % =============== piecewise cubic model ==================
@@ -2018,6 +2032,67 @@ if ~isempty(prescription.MinSlope) || ~isempty(prescription.MaxSlope)
   
 end
 
+% global min & max second derivative
+if ~isempty(prescription.MinFpp) || ~isempty(prescription.MaxFpp)
+  % just constrain the second derivative over each interval.
+  % since it is piecewise linear, that will be both necessary
+  % and sufficient. If the curve is C2, then there will be
+  % nk inequality constraints needed. If it is only C1, then
+  % 2*nk-2.
+  isC2 = true;
+  if strcmpi(prescription.C2,'off')
+    isC2 = false;
+  end
+  
+  if isC2
+    % C2, so just constrain the second derivative at each knot point.
+    ntot = nk;
+    Mmin = zeros(ntot,nc);
+    Mmax = Mmin;
+    if ~isempty(prescription.MinFpp) 
+      Mmin(1,[1, 2, nk+1, nk+2]) = -[[-6 6]/dx(1)^2,[-4 -2]/dx(1)];
+      for j = 2:nk
+        Mmin(j,j + [-1, 0, nk-1, nk]) = -[[6 -6]/dx(j-1)^2,[2 4]/dx(j-1)];
+      end
+    end
+    if ~isempty(prescription.MaxFpp) 
+      Mmax(1,[1, 2, nk+1, nk+2]) = [[-6 6]/dx(1)^2,[-4 -2]/dx(1)];
+      for j = 2:nk
+        Mmax(j,j + [-1, 0, nk-1, nk]) = [[6 -6]/dx(j-1)^2,[2 4]/dx(j-1)];
+      end
+    end
+    
+  else
+    % C1, so we need to constrain the second derivative on both sides of
+    % each knot in each interval.
+    ntot = 2*nk - 2;
+    Mmin = zeros(ntot,nc);
+    Mmax = Mmin;
+    if ~isempty(prescription.MinFpp) 
+      for j = 1:(nk-1)
+        Mmin(2*j-1,j + [0, 1, nk, nk+1]) = -[[-6 6]/dx(j)^2,[-4 -2]/dx(j)];
+        Mmin(2*j,  j + [0, 1, nk, nk+1]) = -[[6 -6]/dx(j)^2,[2 4]/dx(j)];
+      end
+    end
+    if ~isempty(prescription.MaxFpp) 
+      for j = 1:(nk-1)
+        Mmax(2*j-1,j + [0, 1, nk, nk+1]) = [[-6 6]/dx(j)^2,[-4 -2]/dx(j)];
+        Mmax(2*j,  j + [0, 1, nk, nk+1]) = [[6 -6]/dx(j)^2,[2 4]/dx(j)];
+      end
+    end
+    
+  end
+  
+  if ~isempty(prescription.MinFpp)
+    Mineq = [Mineq;Mmin];
+    rhsineq = [rhsineq;repmat(-prescription.MinFpp,ntot,1)];
+  end
+  if ~isempty(prescription.MaxFpp)
+    Mineq = [Mineq;Mmax];
+    rhsineq = [rhsineq;repmat(prescription.MaxFpp,ntot,1)];
+  end
+end
+
 % -------------------------------------
 % SimplePeak and SimpleValley are really just composite
 % properties. A peak at x == a is equivalent to a monotone
@@ -2329,7 +2404,7 @@ if (isnumeric(RP) && (RP>=0)) || ((ischar(RP)) && (strcmpi(RP,'smoothest')))
   % solve the problem using the given regularization parameter
   
   finalRP = RP;
-  coef = solve_slm_system(finalRP,Mdes,rhs,Mreg,rhsreg, ...
+  [coef,lambda] = solve_slm_system(finalRP,Mdes,rhs,Mreg,rhsreg, ...
     Meq,rhseq,Mineq,rhsineq,prescription);
   
 elseif isnumeric(RP) && (RP<0)
@@ -2345,7 +2420,7 @@ elseif isnumeric(RP) && (RP<0)
   finalRP = 10^RP;
   
   % do one final call to get the final coefficients
-  coef = solve_slm_system(finalRP,Mdes,rhs,Mreg,rhsreg, ...
+  [coef,lambda] = solve_slm_system(finalRP,Mdes,rhs,Mreg,rhsreg, ...
     Meq,rhseq,Mineq,rhsineq,prescription);
   
 elseif ischar(RP)
@@ -2362,7 +2437,7 @@ elseif ischar(RP)
   finalRP = 10^RP;
   
   % do one final call to get the final coefficients
-  coef = solve_slm_system(finalRP,Mdes,rhs,Mreg,rhsreg, ...
+  [coef,lambda] = solve_slm_system(finalRP,Mdes,rhs,Mreg,rhsreg, ...
     Meq,rhseq,Mineq,rhsineq,prescription);
 end
 
@@ -2377,7 +2452,8 @@ slm.coef = reshape(coef,nk,2);
 slmstats.TotalDoF = 2*nk;
 slmstats.NetDoF = slmstats.TotalDoF - size(Meq,1);
 % this function does all of the stats, stuffing into slmstats
-slm.stats = modelstatistics(slmstats,Mdes,y,coef,prescription.YScale);
+slm.stats = modelstatistics(slmstats,y,coef,prescription.YScale,Mdes);
+
 slm.stats.finalRP = finalRP;
 
 % ========================================================
@@ -2391,8 +2467,8 @@ function [coef,lambda] = robustfit_slm_system(RP,Mdes,rhs,Mreg,rhsreg,Meq,rhseq,
 % we don't want recursive calls into this code block.
 prescription.Robust = 'off';
 
-% helper function to compute a robust std error
-medsig = @(resids) median(sort(abs(resids)))/0.6745;
+% what are the current set of weights? If none, then set to ones.
+currentweights = prescription.Weights;
 
 % get a base fit that ignores robustness
 [coef,lambda] = solve_slm_system(RP,Mdes,rhs,Mreg,rhsreg,Meq,rhseq,Mineq,rhsineq,prescription);
@@ -2403,6 +2479,29 @@ resid = Mdes*coef - rhs;
 
 
 
+%{
+D = sqrt(eps('double'));
+iter = 0;
+iterlim = 50;
+wxrank = xrank;    % rank of weighted version of x
+while((iter==0) || any(abs(b-b0) > D*max(abs(b),abs(b0))))
+   iter = iter+1;
+   if (iter>iterlim)
+      warning(message('stats:statrobustfit:IterationLimit'));
+      break;
+   end
+   
+   % Compute residuals from previous fit, then compute scale estimate
+   r = y - X*b;
+   radj = r .* adjfactor ./ sw;
+   s = madsigma(radj,wxrank);
+   
+   % Compute new weights from these residuals, then re-fit
+   w = feval(wfun, radj/(max(s,tiny_s)*tune));
+   b0 = b;
+   [b(perm),wxrank] = wfit(y,X(:,perm),w);
+end
+%}
 
 
 
@@ -2417,6 +2516,14 @@ resid = Mdes*coef - rhs;
 
 
 
+% ========================================================
+% ===== (Essentially Stats toolbox code) madsigma ========
+% ========================================================
+function s = madsigma(r,p)
+%MADSIGMA    Compute sigma estimate using MAD of residuals from 0
+% used for robust solver
+rs = sort(abs(r));
+s = median(rs(max(1,p):end)) / 0.6745;
 
 % ========================================================
 % ========= aggregate linear system & solve ==============
@@ -2426,6 +2533,9 @@ function [coef,lambda] = solve_slm_system(RP,Mdes,rhs,Mreg,rhsreg,Meq,rhseq,Mine
 
 % trap for the robust solver
 if strcmpi(prescription.Robust,'on')
+  if prescription.Verbosity > 1
+    disp('Robust fit employed')
+  end
   [coef,lambda] = robustfit_slm_system(RP,Mdes,rhs,Mreg,rhsreg,Meq,rhseq,Mineq,rhsineq,prescription);
   return
 end
@@ -2438,6 +2548,7 @@ if prescription.Verbosity > 1
   disp(['Regularizer shape:      ',num2str(size(Mreg))])
   disp(['Equality constraints:   ',num2str(size(Meq))])
   disp(['Inequality constraints: ',num2str(size(Mineq))])
+  disp(['Solver employed:        ',prescription.Solver])
 end
 
 % combine design matrix and regularizer
@@ -2470,6 +2581,8 @@ elseif isempty(Mineq)
   % the optimization toolbox is not present if there
   % are no inequality constraints.
   coef = lse(Mfit,rhsfit,full(Meq),rhseq);
+  lambda.eqlin=[];
+  lambda.ineqlin=[];
   
   solver = 'lse';
   
@@ -2483,7 +2596,8 @@ else
   end
   % the Largescale solver will not allow general constraints,
   % either equality or inequality
-  options.LargeScale='off';
+  options.LargeScale = 'off';
+  options.Algorithm = prescription.LsqlinAlgorithm;
   
   % and solve
   [coef,junk,junk,exitflag,junk,lambda] = ...
@@ -2491,7 +2605,8 @@ else
   
   % was there a feasible solution?
   if exitflag == -2
-    coef = nan(size(coef));
+    warning('No feasible solution was found by LSQLIN. This may reflect an inconsistent prescription set.')
+    coef = nan(size(Mfit,2),1);
   end
   
   solver = 'lsqlin';
@@ -2500,61 +2615,8 @@ end
 
 if prescription.Verbosity > 0
   disp('=========================================')
-  disp(solver)
+  disp(['Solver chosen as:     ',solver])
   disp('=========================================')
-end
-
-% ========================================================
-% ========== Choice of three "linear" solvers ============
-% ========================================================
-function [coef,lambda,solver] = choose_solver(Mfit,rhsfit,Meq,rhseq,Mineq,rhsineq,prescription)
-% picks an appropriate solver for the system, based on the existence
-% of constraints of either class
-
-if isempty(Mineq) && isempty(Meq)
-  % backslash will suffice. this allows use of SLM for those rare problems
-  % when lsqlin would not be needed. It will also be faster than the other
-  % solvers.
-  coef = Mfit\rhsfit;
-  lambda.eqlin=[];
-  lambda.ineqlin=[];
-  
-  solver = 'backslash';
-
-elseif isempty(Mineq)
-  % with no inequality constraints, lse is faster than
-  % is lsqlin. This also allows the use of slm when
-  % the optimization toolbox is not present if there
-  % are no inequality constraints.
-  coef = lse(Mfit,rhsfit,full(Meq),rhseq);
-  lambda.eqlin=[];
-  lambda.ineqlin=[];
-  
-  solver = 'lse';
-  
-else
-  % use lsqlin. first, set the options
-  options = optimset('lsqlin');
-  if prescription.Verbosity > 1
-    options.Display = 'final';
-  else
-    options.Display = 'off';
-  end
-  % the Largescale solver will not allow general constraints,
-  % either equality or inequality
-  options.LargeScale='off';
-  
-  % and solve
-  [coef,junk,junk,exitflag,junk,lambda] = ...
-    lsqlin(Mfit,rhsfit,Mineq,rhsineq,Meq,rhseq,[],[],[],options); %#ok
-  
-  % was there a feasible solution?
-  if exitflag == -2
-    coef = nan(size(coef));
-  end
-  
-  solver = 'lsqlin';
-  
 end
 
 % ========================================================
@@ -2723,6 +2785,8 @@ if strcmp(prescription.Scaling,'on')
   end
   
   % LinearRegion
+  % nothing to be done for this one
+  
   % MaxSlope
   if ~isempty(prescription.MaxSlope)
     prescription.MaxSlope = prescription.MaxSlope*YScale;
@@ -2733,6 +2797,11 @@ if strcmp(prescription.Scaling,'on')
     prescription.MaxValue = prescription.MaxValue*YScale + YShift;
   end
   
+  % MaxFpp
+  if ~isempty(prescription.MaxFpp)
+    prescription.MaxFpp = prescription.MaxFpp*YScale;
+  end
+  
   % MinSlope
   if ~isempty(prescription.MinSlope)
     prescription.MinSlope = prescription.MinSlope*YScale;
@@ -2741,6 +2810,11 @@ if strcmp(prescription.Scaling,'on')
   % MinValue
   if ~isempty(prescription.MinValue)
     prescription.MinValue = prescription.MinValue*YScale + YShift;
+  end
+  
+  % MinFpp
+  if ~isempty(prescription.MinFpp)
+    prescription.MinFpp = prescription.MinFpp*YScale;
   end
   
   % RightMaxSlope
@@ -2854,7 +2928,8 @@ end
 % ========================================================
 % ========= model statistics =========
 % ========================================================
-function slmstats = modelstatistics(slmstats,Mdes,y,coef,YScale)
+function slmstats = modelstatistics(slmstats,y,coef,YScale,Mdes)
+
 % generate model statistics, stuffing them into slmstats
 
 % residuals, as yhat - y
@@ -2889,6 +2964,12 @@ function property_check(prescription,model_degree)
 % issues warning messages for inappropriate properties
 % for the given model degree.
 
+if strncmpi(prescription.Robust,'on',2)
+  warning('SLMENGINE:RobustFitting', ...
+    'Sorry, but the robust fitting option is not yet operable.')
+  prescription.Robust = 'off';
+end
+
 switch model_degree
   case {3 'cubic'}
     % no properties flagged for cubic models
@@ -2901,7 +2982,17 @@ switch model_degree
       warning('SLMENGINE:ignoredconstraint', ...
         'Property ignored for a linear model: Jerk')
     end
-        
+    
+    if ~isempty(prescription.MinFpp)
+      warning('SLMENGINE:ignoredconstraint', ...
+        'Property ignored for a linear model: MinFpp')
+    end
+    
+    if ~isempty(prescription.MaxFpp)
+      warning('SLMENGINE:ignoredconstraint', ...
+        'Property ignored for a linear model: MaxFpp')
+    end
+    
     if ~isempty(prescription.SegmentLinear)
       warning('SLMENGINE:ignoredconstraint', ...
         'Property ignored for a linear model: SegmentLinear')
@@ -2945,6 +3036,16 @@ switch model_degree
     if ~isempty(prescription.Jerk)
       warning('SLMENGINE:ignoredconstraint', ...
         'Property ignored for a constant model: Jerk')
+    end
+    
+    if ~isempty(prescription.MinFpp)
+      warning('SLMENGINE:ignoredconstraint', ...
+        'Property ignored for a constant model: MinFpp')
+    end
+    
+    if ~isempty(prescription.MaxFpp)
+      warning('SLMENGINE:ignoredconstraint', ...
+        'Property ignored for a constant model: MaxFpp')
     end
     
     if ~isempty(prescription.LeftMaxSlope)

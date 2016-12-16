@@ -149,9 +149,9 @@ plot(xev,yev,'g-',x1,y1,'ro')
 % Lets try again, only this time we'll use less data, with a much
 % higher level of noise.
 close
-n = 30;
-x2 = sort(rand(n,1));
-y2 = exp(x2) + randn(n,1)/3;
+n = 100;
+x2 = sort(4*rand(n,1)-3);
+y2 = exp(x2) + randn(n,1);
 plot(x2,y2,'ro')
 
 P = polyfit(x2,y2,6);
@@ -231,8 +231,10 @@ slmeval(.5,slm)
 slmeval(.5,slm,1)
 
 %%
-% and even compute an inverse at any point. 
-slmeval(1.75,slm,-1)
+% and even compute an inverse at any point. Note that slmeval computes only
+% the "left-most" inverse. So if there is more than one solution that you
+% wish to find, then you should use slmsolve.
+slmeval(1.50,slm,-1)
 
 %%
 % We could plot the function as fit uing slmeval,
@@ -254,15 +256,17 @@ plotslm(slm)
 close all
 slm = slmengine(x2,y2,'degree',3,'knots',4,'plot','on');
 
-%% Computations on a spline model, min max, integral, etc.
+%% slmpar: Computations on a spline model, min max, integral, etc.
 % plotslm can plot the function derivatives or integral, and
 % slmeval can evaluate the function, its derivatives or the inverse
 % function at specific points. However, it is occasionally useful to be
 % able to find the minimum (or maximum) value of a spline over some interval, or
 % find the minimum or maximum value of the slope, or compute the integral of the
-% curve between a pair of points.
+% curve between a pair of points. slmpar also can convert a spline model
+% into a symbolic form, for those who wish to see what the segments are
+% in a functional form.
 %
-% The slmpar function does these things, both for a slm form as well as a pp form.
+% The slmpar function does all of these things, both for a slm form as well as a pp form.
 x = -5:.1:5;
 y = exp(-x.^2/2)/sqrt(2*pi) + randn(size(x))/100;
 slm = slmengine(x,y,'plot','on','knots',15,'integral',1,'deg',3,'minval',0)
@@ -297,45 +301,46 @@ res = slmpar(pp,'integral',[0,pi])
 % on top of the curve. The knots are at the vertical green dotted
 % lines.
 
-%% Curvature constraints
-% Having seen the fit above, one might wonder why one would use
-% a shape prescriptive model at all. It appears to be little better
-% than that 6'th order polynomial model we fit before using polyfit.
+%% slmsolve: find all roots of a spline, f(x) == y, for any given value of y
+% slmsolve will find all solutions for the this general problem, as opposed
+% to slmeval, which returns only the left-most (closest to -inf) solution.
 %
-% What do we know about the underlying functional relationship?
-% We want to think in terms of fundamental shape primitives.
-%
-% I'd suggest that the function is known to be positively curved.
-% Its was a simple exponential after all. The second derivatve
-% should never be negative.
-close all
-slm = slmengine(x2,y2,'plot','on','concaveup','on');
+% slmsolve works on any SLM toolbox produced spline model, as well as any
+% pp form model, produced by pp, spline, etc.
+x = linspace(0,1,200);
+y = x + sin(20*x);
+pp = spline(x,y);
+fnplt(pp)
 
-%% Monotonicity constraints
-% Having seen the fit above, one might wonder why one would use
-% a shape prescriptive model at all. It appears to be little better
-% than that 6'th order polynomial model we fit before using polyfit.
+%%
+% Find the solutions of f(x) = 0.5 over the support of the spline.
+xloc = slmsolve(pp,0.5)
+hold on
+plot(xloc',0.5,'ro',[min(xloc);max(xloc)],[0.5 0.5],'r-')
+
+%% Model fitting using shape prescriptors
+% Having seen the exponential data fit above, one might wonder why one
+% would use a shape prescriptive model at all. It appears to be little
+% better than that 6'th order polynomial model we fit before using polyfit.
 %
 % What do we know about the underlying functional relationship?
 % We want to think in terms of fundamental shape primitives.
 %
-% I'd suggest that the function is known to be positively curved.
-% Its was a simple exponential after all. The second derivatve
+% I'd suggest that the function is known to be a monotone increasing
+% function. It was a simple exponential after all. The first derivatve
 % should never be negative.
 close all
 slm = slmengine(x2,y2,'plot','on','increasing','on');
 
+%% Curvature constraints
+% I'd also suggest that the function is known to be positively curved.
+% The second derivatve should never be negative.
+close all
+slm = slmengine(x2,y2,'plot','on','concaveup','on');
+
 %% Both curvature and monotonicity constraints
-% Having seen the fit above, one might wonder why one would use
-% a shape prescriptive model at all. It appears to be little better
-% than that 6'th order polynomial model we fit before using polyfit.
-%
-% What do we know about the underlying functional relationship?
-% We want to think in terms of fundamental shape primitives.
-%
-% I'd suggest that the function is known to be positively curved.
-% It was a simple exponential after all. The second derivatve
-% should never be negative.
+% We can also use both a curvature and monotonicity constraint, although
+% on many data sets, one will be sufficient.
 close all
 slm = slmengine(x2,y2,'plot','on','concaveup','on','increasing','on');
 
@@ -375,7 +380,7 @@ grid on
 % unless they insist on doing so. The extrapolation options will
 % be shown in some detail later on.
 close all
-slm = slmengine(x2,y2,'plot','on','concaveup','on','increasing','on','knots',[-1,0:.2:1,2]);
+slm = slmengine(x2,y2,'plot','on','concaveup','on','increasing','on','knots',[-3, -2:.5:1 , 2]);
 
 %% Piecewise constant models
 % Or even to use a lower order model. This version of my toolkit only

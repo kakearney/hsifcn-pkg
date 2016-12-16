@@ -16,24 +16,46 @@ function [result,location] = slmpar(model,parameter,domain)
 %           of a spline between two points
 %
 %        'maxfun' - the maximum value of a spline 
-%           between the supplied limits
+%           between the supplied limits. If no limits
+%           were provided in the domain argument, then
+%           the global maximum is returned.
 %
 %        'minfun' - the minimum value of a spline 
-%           between the supplied limits
+%           between the supplied limits. If no limits
+%           were provided in the domain argument, then
+%           the global minimum is returned.
 %
 %        'maxslope' - the maximum value of the first
 %           derivative of the spline between the
-%           supplied limits
+%           supplied limits. If no limits were
+%           provided in the domain argument, then
+%           the global maximum slope is returned.
 %
 %        'minslope' - the minimum value of the first
 %           derivative of the spline between the
-%           supplied limits
+%           supplied limits. If no limits were
+%           provided in the domain argument, then
+%           the global minimum slope is returned.
+%
+%        'maxfpp' - the maximum value of the second
+%           derivative of the spline between the
+%           supplied limits. If no limits were
+%           provided in the domain argument, then
+%           the global maximum second derivative
+%           is returned.
+%
+%        'minfpp' - the minimum value of the second
+%           derivative of the spline between the
+%           supplied limits. If no limits were
+%           provided in the domain argument, then
+%           the global minimum second derivative
+%           is returned.
 %
 %        Many people always seem to want to know the
 %        "equations" that make up a spline. However,
 %        there is no single equation, since each
 %        segment is a separate, distinct polynomial.
-%        The following opions allow the user to extract
+%        The following options allow the user to extract
 %        those polynomials, in one of several forms.
 %
 %        'symabs' - convert each segment of the spline
@@ -49,7 +71,7 @@ function [result,location] = slmpar(model,parameter,domain)
 %        'symnorm' - convert each segment of the spline
 %           into a normalized symbolic polynomial form,
 %           as a function of the independent variable t,
-%           defeined on the normalized interval [0,1].
+%           defined on the normalized interval [0,1].
 %
 %  domain - (OPTIONAL) - denotes the domain over
 %        which the specified parameter will be
@@ -133,16 +155,16 @@ end
 deg = model.order - 1;
 
 if (nargin < 2) || isempty(parameter) || ~ischar(parameter)
-  error('SLMPAR:improperarguments','parameter was not supplied, as a string')
+  error('SLMPAR:improperarguments','parameter was not supplied, or is not a string')
 end
 
 % check to see which parameter is requested
 valid = {'integral', 'maxfun', 'minfun', 'maxslope', 'minslope', ...
-  'symabs', 'symrel', 'symnorm'};
-ind = strmatch(lower(parameter),valid);
-if isempty(ind) 
+  'minfpp', 'maxfpp', 'symabs', 'symrel', 'symnorm'};
+ind = strncmpi(parameter,valid,numel(parameter));
+if ~any(ind) 
   error('SLMPAR:improperarguments','Improper parameter supplied')
-elseif (numel(ind) > 1)
+elseif (sum(ind) > 1)
   error('SLMPAR:improperarguments','Ambiguous parameter supplied')
 else
   parameter = valid{ind};
@@ -227,19 +249,22 @@ elseif strncmp(parameter,'sym',3)
   return
 end
 
-% if we drop down to here, we must compute a
-% function min or max, or a derivative min or max.
+% if we drop down to here, we must compute a function
+% min or max, or a derivative min or max.
 
 % for the integral, domain could have been supplied
 % with domain(1) > domain(2). just sort it for any
 % other possible parameter.
 domain = sort(domain);
 
+% anything else is a min or max problem of the
+% function or some derivative of the function
+
 % we will find a min in all cases. For a max,
-% i.e., {'maxfun' 'maxslope'} these are really the
-% same problem. just negate the coefficients to
-% turn one into the other.
-if ismember(parameter,{'maxfun', 'maxslope'})
+% i.e., {'maxfun' 'maxslope'} these
+% are really the same problem. just negate the
+% coefficients to turn one into the other.
+if ismember(parameter,{'maxfun', 'maxslope', 'maxfpp'})
   model.coefs = -model.coefs;
 end
 
@@ -255,11 +280,32 @@ if ismember(parameter,{'minslope', 'maxslope'})
     return
   end
   
+  % differentiate the model pieces once
   ind = 1:deg;
   model.coefs = model.coefs(:,ind).*repmat(deg-ind+1,model.pieces,1);
   
   model.order = model.order - 1;
   deg = deg - 1;
+  
+elseif ismember(parameter,{'minfpp', 'maxfpp'})
+  if (deg == 0) || (deg == 1)
+    % a piecewise linear or constant function will have
+    % a simpler yet derivative (excluding those
+    % nasty singularities at the breaks.)
+    result = 0;
+    location = model.breaks(1);
+    return
+  end
+  
+  % differentiate the model pieces twice
+  ind = 1:deg;
+  model.coefs = model.coefs(:,ind).*repmat(deg-ind+1,model.pieces,1);
+  ind = 1:(deg-1);
+  model.coefs = model.coefs(:,ind).*repmat(deg-ind,model.pieces,1);
+  
+  model.order = model.order - 2;
+  deg = deg - 2;
+  
 end
 
 % the problem is now reduced to finding the minimum
@@ -369,7 +415,7 @@ end
 
 % turn a min back into a max. the location
 % stays the same.
-if ismember(parameter,{'maxfun', 'maxslope'})
+if ismember(parameter,{'maxfun', 'maxslope', 'maxfpp'})
   result = -result;
 end
 

@@ -4,11 +4,15 @@ function y = slmeval(x,slm,evalmode)
 % usage 2: y = slmeval(x,slm,evalmode)  % general form
 %
 % As opposed to extrapolation as I am, slmeval will not extrapolate
-% unless explicitly told to do so. If you wanted to extrapolate,
-% then you really should have built the spline differently, with knots
-% that extend to the limits as far as you will expect to predict.
-% This way, the user will be able to control tha behavior of the curve
-% in the extrapolation region.
+% unless you explicitly built that as part of the spline prescription.
+% If you wanted to extrapolate, then you really should have built
+% the spline differently, with knots that extend to the limits as
+% far as you will expect to predict. This way, the user will be able
+% to control tha behavior of the curve in the extrapolation region.
+%
+% Extrapolation will NEVER be allowed for an inverse problem. NaN
+% will result for any values of an inverse that would require
+% extrapolation.
 %
 % Extrapolation MAY be done however by SLMEVAL, if the extrapolation
 % parameter was set properly by either slmset or slmengine. There
@@ -254,20 +258,23 @@ switch slm.degree
         % determine which knot interval to look in for
         % each point.
         ybin = nmbs(x(k),coef);
-
-        % rule out the divide by zero cases for intervals
-        % where the function was constant
-        L = (coef(ybin+1) == coef(ybin));
-        if any(L)
-          y(k(L)) = knots(ybin(L));
-          ybin(L)=[];
-          k(L)=[];
+        
+        % any solution at all?
+        if ~isempty(ybin)
+          % rule out the divide by zero cases for intervals
+          % where the function was constant
+          L = (coef(ybin+1) == coef(ybin));
+          if any(L)
+            y(k(L)) = knots(ybin(L));
+            ybin(L)=[];
+            k(L)=[];
+          end
+          
+          % inverse interpolation
+          y(k) = knots(ybin) + (x(k) - coef(ybin)).* ...
+            (knots(ybin+1)-knots(ybin))./(coef(ybin+1)-coef(ybin));
         end
-
-        % inverse interpolation
-        y(k) = knots(ybin) + (x(k) - coef(ybin)).* ...
-          (knots(ybin+1)-knots(ybin))./(coef(ybin+1)-coef(ybin));
-
+        
       otherwise
         % anything else
         error('Evalmode must be one of [0 1 2 3 -1]')
@@ -344,7 +351,8 @@ switch slm.degree
           coef(xbin+1,1).*(6 - 12*t))./(dx(xbin).^2);
         
         % catch the points that fell outside, IF extraptype
-        % indicates a linear extrapolation in those areas.
+        % indicates a linear extrapolation in those areas, then
+        % the second derivative must be zero.
         if extraptype == 4
           k = (x < knots(1)) | (x > knots(end));
           y(k) = 0;
@@ -357,6 +365,7 @@ switch slm.degree
         
         % catch the points that fell outside, IF extraptype
         % indicates a linear extrapolation in those areas.
+        % In that case, the third derivative would be zero.
         if extraptype == 4
           k = (x < knots(1)) | (x > knots(end));
           y(k) = 0;

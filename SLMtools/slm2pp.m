@@ -66,6 +66,9 @@ switch degree
     pp.coefs(:,4) = c2;
     for i = 1:(nbr - 1)
       dxi = dx(i);
+      % formulate a linear system of equations in the coefficients
+      % of the segment polynomial to determine the higher order
+      % coefficients of the polynomial.
       A = [dxi.^[5 4 3];[5 4 3].*dxi.^[4 3 2];[20 12 6].*dxi.^[3 2 1]];
       rhs = slm.coef(i+1,:)' - ...
         [dxi.^[2 1 0];[2 1 0].*dxi.^[1 0 0];[2 0 0].*dxi.^[0 0 0]]* ...
@@ -81,12 +84,15 @@ switch degree
     
     for i = 1:(nbr - 1)
       dxi = dx(i);
+      % formulate a linear system of equations in the coefficients
+      % of the segment polynomial to determine the higher order
+      % coefficients of the polynomial.
       A = [dxi.^[7 6 5 4 3 2 1 0]; ...
         [7 6 5 4 3 2 1 0].*dxi.^[6 5 4 3 2 1 0 0]; ...
         [42 30 20 12 6 2 0 0].*dxi.^[5 4 3 2 1 0 0 0]; ...
         [210 120 60 24 6 0 0 0].*dxi.^[4 3 2 1 0 0 0 0]];
         
-      rhs = slm.coef(i+1,:).' - A(:,5:8)*pp.coefs(i,5:8).';
+      rhs = slm.coef(i,:).' - A(:,5:8)*pp.coefs(i,5:8).';
       
       pp.coefs(i,1:4) = (A(:,1:4)\rhs).';
     end

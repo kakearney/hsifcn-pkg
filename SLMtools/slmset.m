@@ -231,6 +231,12 @@ function prescription=slmset(varargin)
 %
 %         DEFAULT value: 'constant'
 %
+% 'FminconAlgorithm' - Controls the algorithm used by fmincon when
+%         it is employed to solve free knot problems. The allowed
+%         options here are 'interior-point', 'active-set', and 'sqp'.
+%
+%         DEFAULT VALUE:  'interior-point'
+%
 % 'increasing' - controls monotonicity of the function
 %         = 'off'  --> No part of the spline is constrained to be an
 %           increasing function.
@@ -396,7 +402,24 @@ function prescription=slmset(varargin)
 %         Comment 2: A linear region may extend across knots, in
 %         which case the slope will take on the same value across
 %         knot boundaries.
+%
+% 'LsqlinAlgorithm' - Controls the algorithm used by LSQLIN when
+%         it is employed. The allowed options here are
+%         'interior-point', 'active-set'.
+%
+%         DEFAULT VALUE:  'interior-point'
 %         
+% 'maxfpp' - controls the globally maximum value of the second derivative
+%         = [] --> No explicit value provided for the globally
+%           maximum value of the spline.
+%         = A numeric scalar --> the second derivative may go
+%           no higher than this maximum value.
+%
+%         DEFAULT VALUE:  []
+%
+%         Comment: This constraint applies only to cubic splines,
+%         since the lower order models are not sufficiently differentiable.
+%
 % 'maxslope' - controls the globally maximum slope of the function
 %         = [] --> No explicit value provided for the globally maximum
 %           slope of the curve.
@@ -421,6 +444,17 @@ function prescription=slmset(varargin)
 %         It is not sufficient. In some circumstances the spline may
 %         pass slightly above this maximum value
 %         Comment 2: The location of the global minimizer is unspecified.
+%         
+% 'minfpp' - controls the globally minimum value of the second derivative
+%         = [] --> No explicit value provided for the globally
+%           minimum value of the second derivative.
+%         = A numeric scalar --> the second derivative must go
+%           no lower than this maximum value.
+%
+%         DEFAULT VALUE:  []
+%
+%         Comment: This constraint applies only to cubic splines,
+%         since the lower order models are not sufficiently differentiable.
 %
 % 'minslope' - controls the globally minimum slope of the function
 %         = [] --> No explicit value provided for the globally minimum
@@ -625,6 +659,10 @@ function prescription=slmset(varargin)
 %
 % 'robust' - Controls the use of a simple robust solver, employing
 %           iteratively reweighted least squares.
+%
+%         NOTE: 'Robust' is a TBD option, in progress, but NOT
+%         currently enabled. (Sorry.)
+%
 %         = 'off' --> Simple ordinary least squares is employed
 %         = 'on' --> Performs iteratively re-weighted least squares
 %
@@ -853,6 +891,7 @@ if (nargin==0) || ~isstruct(varargin{1})
   prescription.Envelope = 'off';
   prescription.ErrorBar = [];
   prescription.Extrapolation = 'constant';
+  prescription.FminconAlgorithm = 'interior-point';
   prescription.Increasing = 'off';
   prescription.Integral = [];
   prescription.InteriorKnots = 'fixed';
@@ -865,8 +904,11 @@ if (nargin==0) || ~isstruct(varargin{1})
   prescription.LeftSlope = [];
   prescription.LeftValue = [];
   prescription.LinearRegion = [];
+  prescription.LsqlinAlgorithm = 'interior-point';
+  prescription.MaxFpp = [];
   prescription.MaxSlope = [];
   prescription.MaxValue = [];
+  prescription.MinFpp = [];
   prescription.MinSlope = [];
   prescription.MinValue = [];
   prescription.NegativeInflection = [];
@@ -978,11 +1020,16 @@ prescription = value_check(prescription,'Envelope', ...
 prescription = value_check(prescription,'ErrorBar', ...
      {},{[1 1] [NaN 1] [1 NaN] [NaN 2]},1);
 
-% Extrapolation must be: 'error', 'warning', 'constant', 'linear', 'cubic', 'nan'
+% Extrapolation must be: 'error', 'warning', 'constant', 'linear',
+%   'cubic', 'nan', or ''
 prescription = value_check(prescription,'Extrapolation', ...
-   {'error', 'warning', 'constant', 'linear', 'cubic', 'nan'},[],0);
+   {'error', 'warning', 'constant', 'linear', 'cubic', 'nan'},{},0);
 
-% InteriorKnots must be: 'fized', 'free'
+% FminconAlgorithm must be: 'interior-point', 'active-set', 'sqp', or ''
+prescription = value_check(prescription,'FminconAlgorithm', ...
+   {'interior-point' 'active-set' 'sqp'},{},0);
+ 
+% InteriorKnots must be: 'fixed', 'free'
 prescription = value_check(prescription,'InteriorKnots', ...
    {'fixed', 'free'},{},0);
 
@@ -1040,6 +1087,10 @@ prescription = value_check(prescription,'LeftValue', ...
 prescription = value_check(prescription,'LinearRegion', ...
    {},{[NaN,2]},1);
 
+% LsqlinAlgorithm must be: 'interior-point', 'active-set', or ''
+prescription = value_check(prescription,'LsqlinAlgorithm', ...
+   {'interior-point' 'active-set'},{},0);
+
 % MaxSlope must be a numeric scalar or empty
 prescription = value_check(prescription,'MaxSlope', ...
    {},{[1 1]},1);
@@ -1056,6 +1107,14 @@ prescription = value_check(prescription,'MinSlope', ...
 prescription = value_check(prescription,'MinValue', ...
    {},{[1 1]},1);
 
+% MinFpp must be a numeric scalar or empty
+prescription = value_check(prescription,'MinFpp', ...
+   {},{[1 1]},1);
+
+% MaxFpp must be a numeric scalar or empty
+prescription = value_check(prescription,'MaxFpp', ...
+   {},{[1 1]},1);
+ 
 % NegativeInflection must be a numeric scalar or empty
 prescription = value_check(prescription,'NegativeInflection', ...
    {},{[1 1]},1);

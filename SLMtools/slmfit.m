@@ -422,7 +422,7 @@ function PlotModel(slm)
   % loop over the knots plot, so that individual buttondownfcns
   % can be set.
   nk = numel(slm.knots);
-  params.Handles.Knots = zeros(1,nk);
+  params.Handles.Knots = gobjects(1,nk);
   for i = 1:nk
     params.Handles.Knots(i) = plot(repmat(slm.knots(i)',2,1),yrange(:));
     set(params.Handles.Knots(i),'Marker','none','Color',params.KnotColor, ...
